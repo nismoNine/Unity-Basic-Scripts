@@ -1,0 +1,92 @@
+using UnityEngine;
+
+[RequireComponent(typeof(Rigidbody), typeof(CapsuleCollider))]
+public class CharacterController : MonoBehaviour
+{
+    [Header("Movement")]
+    public float moveSpeed = 6f;
+    public float acceleration = 15f;
+    public float deceleration = 20f;
+    public float airControl = 0.5f;
+
+    [Header("Jumping")]
+    public float jumpForce = 12f;
+    public float coyoteTime = 0.2f;
+    public float jumpBufferTime = 0.15f;
+    public float fallMultiplier = 2.5f;
+    public float lowJumpMultiplier = 2f;
+
+    [Header("Ground Detection")]
+    public LayerMask groundLayer;
+    public float groundCheckDistance = 0.05f;
+
+    private Rigidbody rb;
+    private CapsuleCollider col;
+    private Vector3 inputDir;
+    private Vector3 moveDir;
+    private bool jumpPressed;
+    private float coyoteCounter;
+    private float jumpBufferCounter;
+
+    void Awake()
+    {
+        rb = GetComponent<Rigidbody>();
+        col = GetComponent<CapsuleCollider>();
+        rb.freezeRotation = true;
+    }
+
+    void Update()
+    {
+        // Input
+        inputDir = new Vector3(Input.GetAxisRaw("Horizontal"), 0f, Input.GetAxisRaw("Vertical")).normalized;
+
+        if (Input.GetButtonDown("Jump"))
+            jumpBufferCounter = jumpBufferTime;
+        else
+            jumpBufferCounter -= Time.deltaTime;
+    }
+
+    void FixedUpdate()
+    {
+        bool isGrounded = CheckGrounded();
+
+        if (isGrounded)
+            coyoteCounter = coyoteTime;
+        else
+            coyoteCounter -= Time.fixedDeltaTime;
+
+        // Movement
+        Vector3 desiredVelocity = Quaternion.Euler(0, Camera.main.transform.eulerAngles.y, 0) * inputDir * moveSpeed;
+        Vector3 velocity = rb.velocity;
+        Vector3 horizontalVelocity = new Vector3(velocity.x, 0, velocity.z);
+
+        float control = isGrounded ? 1f : airControl;
+        Vector3 velocityChange = (desiredVelocity - horizontalVelocity) * control;
+        velocityChange = Vector3.ClampMagnitude(velocityChange, isGrounded ? acceleration : acceleration * airControl);
+        velocityChange.y = 0;
+        rb.AddForce(velocityChange, ForceMode.VelocityChange);
+
+        if (jumpBufferCounter > 0 && coyoteCounter > 0)
+        {
+            rb.velocity = new Vector3(rb.velocity.x, jumpForce, rb.velocity.z);
+            jumpBufferCounter = 0;
+        }
+
+        if (rb.velocity.y < 0)
+        {
+            rb.velocity += Vector3.up * Physics.gravity.y * (fallMultiplier - 1) * Time.fixedDeltaTime;
+        }
+        else if (rb.velocity.y > 0 && !Input.GetButton("Jump"))
+        {
+            rb.velocity += Vector3.up * Physics.gravity.y * (lowJumpMultiplier - 1) * Time.fixedDeltaTime;
+        }
+    }
+
+    bool CheckGrounded()
+    {
+        Vector3 point = transform.position + Vector3.up * 0.1f;
+        float radius = col.radius * 0.95f;
+        float height = (col.height / 2f) - col.radius + groundCheckDistance;
+        return Physics.SphereCast(point, radius, Vector3.down, out _, height, groundLayer);
+    }
+}
